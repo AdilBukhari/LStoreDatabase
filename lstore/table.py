@@ -112,10 +112,10 @@ class Table:
 
     def merge(self):
         for i in range(len(self.pagerange_array)):
-            #self.locks[i].acquire()
+            self.locks[i].acquire()
             b_array, tail_array, offset = self.pagerange_array[i].get_basepage_copy()
             if len(tail_array) == 0 or len(b_array) == 0:
-                #self.locks[i].release()
+                self.locks[i].release()
                 continue
             base_array = []
             for ii in range(len(b_array)):
@@ -125,7 +125,77 @@ class Table:
                     arr.append(copy.deepcopy(b_array[ii][jj]))
                     self.bufferpool.decrementPin(b_array[ii][jj])
                 base_array.append(arr)
-            #self.locks[i].release()
+            self.locks[i].release()
+            latest_update = set()
+            latest_tail_rid = 0
+            found = True
+            for tail_page_num in reversed(range(len(tail_array))):  # Iterate through each tail page in tail page array
+                tail_page = tail_array[tail_page_num]
+                base_rid_col = len(tail_page) - 1   # Last column in tail record should be the base RID column
+
+                # for each record in the tail (determined by offset) page copy all values to the corresponding base page
+                for base_rid_col_offset in range(4088, -1, -8):
+                    self.bufferpool.get(tail_page[base_rid_col], self.table_path, (i, tail_page_num + offset, base_rid_col, self.num_columns + 3), 'tp')
+                    c_base_page_rid = tail_page[base_rid_col].read(base_rid_col_offset)
+                    if found:
+                        self.bufferpool.get(tail_page[base_rid_col - 2], self.table_path, (i, tail_page_num + offset, base_rid_col - 2, self.num_columns + 3), 'tp')
+                        latest_tail_rid = tail_page[base_rid_col - 2].read(base_rid_col_offset)
+                        found = False
+                        self.bufferpool.decrementPin(tail_page[base_rid_col - 2])
+                    self.bufferpool.decrementPin(tail_page[base_rid_col])
+
+                    # Check to see if latest update has already been copied over for that base record
+                    if c_base_page_rid in latest_update:
+                        continue
+
+                    latest_update.add(c_base_page_rid)
+
+                    params = self.page_directory.get(c_base_page_rid)
+                    if params == None:
+                        continue
+                    basepage_num = params[1][0]
+                    if basepage_num >= len(base_array):
+                        continue
+                    base_rid_offset = params[1][1]
+
+                    # Iterate through all use defined columns in tail page
+                    for col in range(len(tail_page) - 3):
+                        self.bufferpool.get(tail_page[col], self.table_path, (i, tail_page_num + offset, col, self.num_columns + 3), 'tp')
+                        tail_col_val = tail_page[col].read(base_rid_col_offset)
+                        self.bufferpool.decrementPin(tail_page[col])
+                        if tail_col_val != 0:
+                            base_array[basepage_num][col].write(tail_col_val, base_rid_offset)
+
+            # lock page range
+            # update tps
+            self.locks[i].acquire()
+            self.pagerange_array[i].tps = latest_tail_rid
+            # update all base pages
+            for ii in range(len(base_array)):
+                for jj in range(len(base_array[ii])):
+                    self.bufferpool.get(b_array[ii][jj], self.table_path, (i, ii, jj, self.num_columns + 3), 'bp')
+                    b_array[ii][jj].data = base_array[ii][jj].data
+                    self.bufferpool.decrement_and_markDirty(b_array[ii][jj])
+            self.locks[i].release()
+            # release lock
+
+    '''
+    def merge(self):
+        for i in range(len(self.pagerange_array)):
+            self.locks[i].acquire()
+            b_array, tail_array, offset = self.pagerange_array[i].get_basepage_copy()
+            if len(tail_array) == 0 or len(b_array) == 0:
+                self.locks[i].release()
+                continue
+            base_array = []
+            for ii in range(len(b_array)):
+                arr = []
+                for jj in range(len(b_array[ii])):
+                    self.bufferpool.get(b_array[ii][jj], self.table_path, (i, ii, jj, self.num_columns + 3), 'bp')
+                    arr.append(copy.deepcopy(b_array[ii][jj]))
+                    self.bufferpool.decrementPin(b_array[ii][jj])
+                base_array.append(arr)
+            self.locks[i].release()
             latest_update = set()
             latest_tail_rid = 0
             found, conflict = True, True
@@ -169,7 +239,7 @@ class Table:
                 continue
             # lock page range
             # update tps
-            #self.locks[i].acquire()
+            self.locks[i].acquire()
             self.pagerange_array[i].tps = latest_tail_rid
             # update all base pages
             for ii in range(len(base_array)):
@@ -177,9 +247,10 @@ class Table:
                     self.bufferpool.get(b_array[ii][jj], self.table_path, (i, ii, jj, self.num_columns + 3), 'bp')
                     b_array[ii][jj].data = base_array[ii][jj].data
                     self.bufferpool.decrement_and_markDirty(b_array[ii][jj])
-            #self.locks[i].release()
+            self.locks[i].release()
             # release lock
 
+    '''
     # TRAVEL QUERIES #
 
     def read_version(self, rid, query_columns, rv):
