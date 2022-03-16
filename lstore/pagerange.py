@@ -184,3 +184,86 @@ class PageRange:
         offset = self.last_merged_tail_page
         self.last_merged_tail_page = self.last_tail_page
         return (base_array, tail_array, offset)
+
+
+    # TRAVEL QUERIES #
+
+    def readRecord_version(self, base_page_num, offset, query_columns, rv):
+        record = []
+        page = self.base_page_array[base_page_num]
+
+        self.table.bufferpool.get(page[self.num_columns + 1], self.table.table_path, (self.page_range_num, base_page_num, self.num_columns + 1, self.total_bp_columns), 'bp')
+        redirect_val = page[self.num_columns + 1].read(offset)
+        rv += 1
+        self.table.bufferpool.decrementPin(page[self.num_columns + 1])
+
+        if redirect_val != 0:
+            while (redirect_val in self.tail_page_array) and (rv != 0):
+                location = self.tail_page_directory[redirect_val]
+                tail_page = self.tail_page_array[location[0]]
+                tail_page_num = location[0]
+                tail_page_offset = location[1]
+
+                self.table.bufferpool.get(tail_page[self.num_columns + 1], self.table.table_path, (self.page_range_num, tail_page_num, self.num_columns + 1, self.total_tp_columns), 'tp')
+                redirect_val = tail_page[self.num_columns + 1].read(tail_page_offset)
+                self.table.bufferpool.decrementPin(tail_page[self.num_columns + 1])
+
+                rv += 1
+
+
+            if (redirect_val in self.tail_page_array):
+                # This means that you want to read tail record given by redirect val
+                location = self.tail_page_directory[redirect_val]
+                tail_page = self.tail_page_array[location[0]]
+                tail_page_num = location[0]
+                tail_page_offset = location[1]
+
+                for col in query_columns:
+                    self.table.bufferpool.get(tail_page[col], self.table.table_path, (self.page_range_num, tail_page_num, col, self.total_tp_columns), 'tp')
+                    record.append(tail_page[col].read(tail_page_offset))
+                    self.table.bufferpool.decrementPin(tail_page[col])
+            else:
+                # You are asking for the oldest version and have reached indirection of oldest tail record (which points to base record)
+                for col in query_columns:
+                    self.table.bufferpool.get(page[col], self.table.table_path, (self.page_range_num, base_page_num, col, self.total_bp_columns), 'bp')
+                    record.append(page[col].read(offset))
+                    self.table.bufferpool.decrementPin(page[col])
+
+        else:
+            for col in query_columns:
+                self.table.bufferpool.get(page[col], self.table.table_path, (self.page_range_num, base_page_num, col, self.total_bp_columns), 'bp')
+                record.append(page[col].read(offset))
+                self.table.bufferpool.decrementPin(page[col])
+
+        return record
+        '''
+        record = []
+        page = self.base_page_array[base_page_num]
+        self.table.bufferpool.get(page[self.num_columns + 2], self.table.table_path, (self.page_range_num, base_page_num, self.num_columns + 2, self.total_bp_columns), 'bp')
+        schema_encoding = format(page[self.num_columns + 2].read(offset), '064b')
+        self.table.bufferpool.decrementPin(page[self.num_columns + 2])
+
+        # if value in redirection, use latest tail entry to get query columns
+        self.table.bufferpool.get(page[self.num_columns + 1], self.table.table_path, (self.page_range_num, base_page_num, self.num_columns + 1, self.total_bp_columns), 'bp')
+        redirect_val = page[self.num_columns + 1].read(offset)
+        self.table.bufferpool.decrementPin(page[self.num_columns + 1])
+        if redirect_val != 0:
+            location = self.tail_page_directory[redirect_val]
+            tail_page = self.tail_page_array[location[0]]
+            for col in query_columns:
+                if schema_encoding[col + 1] == '1':
+                    self.table.bufferpool.get(tail_page[col], self.table.table_path, (self.page_range_num, location[0], col, self.total_tp_columns), 'tp')
+                    record.append(tail_page[col].read(location[1]))
+                    self.table.bufferpool.decrementPin(tail_page[col])
+                else:
+                    self.table.bufferpool.get(page[col], self.table.table_path, (self.page_range_num, base_page_num, col, self.total_bp_columns), 'bp')
+                    record.append(page[col].read(offset))
+                    self.table.bufferpool.decrementPin(page[col])
+        else:
+            for col in query_columns:
+                self.table.bufferpool.get(page[col], self.table.table_path, (self.page_range_num, base_page_num, col, self.total_bp_columns), 'bp')
+                record.append(page[col].read(offset))
+                self.table.bufferpool.decrementPin(page[col])
+        return record
+        
+        '''

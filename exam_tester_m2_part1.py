@@ -71,6 +71,7 @@ for _ in range(number_of_updates):
             # print('update on', original, 'and', updated_columns, ':', record)
 print("Update finished")
 
+'''
 for i in range(0, number_of_aggregates):
     r = sorted(sample(range(0, len(keys)), 2))
     column_sum = sum(map(lambda key: records[key][0], keys[r[0]: r[1] + 1]))
@@ -82,3 +83,4 @@ for i in range(0, number_of_aggregates):
         # print('sum on [', keys[r[0]], ',', keys[r[1]], ']: ', column_sum)
 print("Aggregate finished")
 db.close()
+'''
