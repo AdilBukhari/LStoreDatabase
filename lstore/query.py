@@ -115,3 +115,31 @@ class Query:
             u = self.update(key, *updated_columns)
             return u
         return False
+
+
+    # TRAVEL QUERIES #
+
+    def select_version(self, index_value, index_column, query_columns, rv):
+        arr = []
+        for i in range(len(query_columns)):
+            if query_columns[i] == 1:
+                arr.append(i)
+        # figure out which RIDs need to be read using index and call Table read w/ RID
+        baseRecord_RID = self.table.index.locate(index_column, index_value)
+        selected_record = self.table.read_version(baseRecord_RID, arr, rv)
+
+        cur = 0
+        for i in range(len(query_columns)):
+            if query_columns[i] == 1:
+                query_columns[i] = selected_record[0].columns[cur]
+                cur += 1
+        selected_record[0].columns = query_columns
+        return selected_record
+
+    def sum_version(self, start_range, end_range, aggregate_column_index, rv):
+        total = 0
+        for key in range(start_range, end_range + 1):
+            rid = self.table.index.locate(aggregate_column_index, key)
+            if rid is not None:
+                total += self.table.read_version(rid, [aggregate_column_index], rv)[0].columns[0]
+        return total

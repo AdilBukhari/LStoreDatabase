@@ -112,10 +112,10 @@ class Table:
 
     def merge(self):
         for i in range(len(self.pagerange_array)):
-            self.locks[i].acquire()
+            # self.locks[i].acquire()
             b_array, tail_array, offset = self.pagerange_array[i].get_basepage_copy()
             if len(tail_array) == 0 or len(b_array) == 0:
-                self.locks[i].release()
+                # self.locks[i].release()
                 continue
             base_array = []
             for ii in range(len(b_array)):
@@ -125,10 +125,10 @@ class Table:
                     arr.append(copy.deepcopy(b_array[ii][jj]))
                     self.bufferpool.decrementPin(b_array[ii][jj])
                 base_array.append(arr)
-            self.locks[i].release()
+            # self.locks[i].release()
             latest_update = set()
             latest_tail_rid = 0
-            found = True
+            found, conflict = True, True
             for tail_page_num in reversed(range(len(tail_array))):  # Iterate through each tail page in tail page array
                 tail_page = tail_array[tail_page_num]
                 base_rid_col = len(tail_page) - 1   # Last column in tail record should be the base RID column
@@ -165,10 +165,11 @@ class Table:
                         self.bufferpool.decrementPin(tail_page[col])
                         if tail_col_val != 0:
                             base_array[basepage_num][col].write(tail_col_val, base_rid_offset)
-
+            if conflict:
+                continue
             # lock page range
             # update tps
-            self.locks[i].acquire()
+            # self.locks[i].acquire()
             self.pagerange_array[i].tps = latest_tail_rid
             # update all base pages
             for ii in range(len(base_array)):
@@ -176,6 +177,21 @@ class Table:
                     self.bufferpool.get(b_array[ii][jj], self.table_path, (i, ii, jj, self.num_columns + 3), 'bp')
                     b_array[ii][jj].data = base_array[ii][jj].data
                     self.bufferpool.decrement_and_markDirty(b_array[ii][jj])
-            self.locks[i].release()
+            # self.locks[i].release()
             # release lock
+    # TRAVEL QUERIES #
+
+    def read_version(self, rid, query_columns, rv):
+        # use page directory to find pageRange for this rid and call it's read function
+        # break up RID
+        pagerange_num, (basepage_num, offset) = self.page_directory[rid]
+        self.locks[pagerange_num].acquire()
+        page_range = self.pagerange_array[pagerange_num]
+
+        # Get values for specified columns in query_columns
+        record_columns = page_range.readRecord_version(basepage_num, offset, query_columns, rv)
+
+        selected_record = Record(rid, record_columns[self.key], record_columns)
+        self.locks[pagerange_num].release()
+        return [selected_record]
  

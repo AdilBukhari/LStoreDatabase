@@ -67,6 +67,7 @@ for key in keys:
         print('select error on', key, ':', record, ', correct:', records[key])
 print("Select for version 0 finished")
 
+'''
 for i in range(0, number_of_aggregates):
     r = sorted(sample(range(0, len(keys)), 2))
     column_sum = sum(map(lambda x: records[x][0] if x in records else 0, keys[r[0]: r[1] + 1]))
@@ -96,5 +97,6 @@ deleted_keys = sample(keys, 100)
 for key in deleted_keys:
     query.delete(key)
     records.pop(key, None)
+'''
 
 db.close()
