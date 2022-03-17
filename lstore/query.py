@@ -135,3 +135,11 @@ class Query:
                 cur += 1
         selected_record[0].columns = query_columns
         return selected_record
+
+    def sum_version(self, start_range, end_range, aggregate_column_index, rv):
+        total = 0
+        for key in range(start_range, end_range + 1):
+            rid = self.table.index.locate(aggregate_column_index, key)
+            if rid is not None:
+                total += self.table.read_version(rid, [aggregate_column_index], rv)[0].columns[0]
+        return total
